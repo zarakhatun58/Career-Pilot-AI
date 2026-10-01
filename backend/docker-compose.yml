@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: web-automation-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: web_automation
+      POSTGRES_USER: automation
+      POSTGRES_PASSWORD: automation_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - web_automation_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  web_automation_postgres_data:

@@ -1,0 +1,164 @@
+# =========================================================
+
+# Python
+
+# =========================================================
+
+**pycache**/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Virtual environments
+
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Python packaging
+
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+
+# Test / coverage
+
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+
+# =========================================================
+
+# Environment / Secrets
+
+# =========================================================
+
+.env
+.env.*
+!.env.example
+
+# Local secret/config files
+
+*.pem
+*.key
+*.crt
+
+# =========================================================
+
+# IDE / Editor
+
+# =========================================================
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# =========================================================
+
+# OS
+
+# =========================================================
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================================================
+
+# Logs
+
+# =========================================================
+
+*.log
+logs/
+
+# =========================================================
+
+# Local runtime / temporary files
+
+# =========================================================
+
+tmp/
+temp/
+*.tmp
+*.temp
+
+# =========================================================
+
+# Database / local storage
+
+# =========================================================
+
+*.sqlite
+*.sqlite3
+*.db
+
+# Do not commit local resume uploads
+
+app/storage/resumes/*
+!app/storage/resumes/.gitkeep
+
+# =========================================================
+
+# Playwright / Browser artifacts
+
+# =========================================================
+
+playwright-report/
+blob-report/
+test-results/
+playwright/.cache/
+
+# Browser downloads / screenshots / traces
+
+downloads/
+screenshots/
+traces/
+*.har
+
+# =========================================================
+
+# Generated files
+
+# =========================================================
+
+*.csv
+*.xlsx
+*.zip
+
+# =========================================================
+
+# Docker local overrides
+
+# =========================================================
+
+docker-compose.override.yml
+
+# =========================================================
+
+# Local development files
+
+# =========================================================
+
+*.local
+run_server.local.py
+
+# Keep example environment configuration
+
+# in source control:
+
+# .env.example
