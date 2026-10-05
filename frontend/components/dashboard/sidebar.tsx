@@ -18,6 +18,7 @@ import {
   ClipboardList,
   Users,
   TrendingUp,
+  Bot,
   Settings,
   LogOut,
   X,
@@ -32,6 +33,7 @@ const navItems = [
   { label: 'Applications', href: '/dashboard/applications', icon: ClipboardList },
   { label: 'Referrals', href: '/dashboard/referrals', icon: Users },
   { label: 'Profile Optimization', href: '/dashboard/profile-optimization', icon: TrendingUp },
+  { label: 'Web Automation', href: '/dashboard/web-automation', icon: Bot },
   { label: 'Settings', href: '/dashboard/settings', icon: Settings },
 ];
 

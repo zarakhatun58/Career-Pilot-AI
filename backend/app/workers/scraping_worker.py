@@ -29,18 +29,8 @@ class ScrapingWorker:
     """
     Async scraping worker with bounded concurrency.
 
-    Architecture:
-
-        Job
-         |
-         +-- Target 1 --> isolated context/session
-         +-- Target 2 --> isolated context/session
-         +-- Target 3 --> isolated context/session
-         ...
-         +-- Target N
-
     The browser process is shared, while every target receives
-    a separate BrowserContext.
+    its own isolated BrowserContext/session.
 
     Protection systems are detected and recorded.
     No anti-bot bypass is performed.
@@ -51,17 +41,17 @@ class ScrapingWorker:
         self.browser_service = BrowserService()
         self.proxy_manager = self._create_proxy_manager()
 
-    # ---------------------------------------------------------
+    # =========================================================
     # Proxy configuration
-    # ---------------------------------------------------------
+    # =========================================================
 
     def _create_proxy_manager(self) -> ProxyManager:
         if not settings.scraping_proxy_enabled:
             return ProxyManager()
 
         raw_proxies = (
-            settings.scraping_proxies.strip()
-        )
+            settings.scraping_proxies or ""
+        ).strip()
 
         if not raw_proxies:
             return ProxyManager()
@@ -86,7 +76,6 @@ class ScrapingWorker:
     def _safe_proxy_label(
         proxy_config: ProxyConfig | None,
     ) -> str:
-
         if proxy_config is None:
             return "direct"
 
@@ -107,27 +96,23 @@ class ScrapingWorker:
                 else ""
             )
 
-            return (
-                f"{scheme}://{host}{port}"
-            )
+            return f"{scheme}://{host}{port}"
 
         except Exception:
             return "configured-proxy"
 
-    # ---------------------------------------------------------
+    # =========================================================
     # Database helpers
-    # ---------------------------------------------------------
+    # =========================================================
 
     def _get_job(
         self,
         db: Session,
     ) -> ScrapingJob | None:
-
         return (
             db.query(ScrapingJob)
             .filter(
-                ScrapingJob.id
-                == self.job_id
+                ScrapingJob.id == self.job_id
             )
             .first()
         )
@@ -136,14 +121,11 @@ class ScrapingWorker:
         self,
         db: Session,
     ) -> list[ScrapingTarget]:
-
         return (
             db.query(ScrapingTarget)
             .filter(
-                ScrapingTarget.job_id
-                == self.job_id,
-                ScrapingTarget.status
-                == "pending",
+                ScrapingTarget.job_id == self.job_id,
+                ScrapingTarget.status == "pending",
             )
             .order_by(
                 ScrapingTarget.id.asc()
@@ -151,16 +133,15 @@ class ScrapingWorker:
             .all()
         )
 
-    # ---------------------------------------------------------
+    # =========================================================
     # Extraction
-    # ---------------------------------------------------------
+    # =========================================================
 
     async def _extract_structured_data(
         self,
         page: Page,
         selectors: dict | None,
     ) -> dict:
-
         selectors = selectors or {}
 
         result = {
@@ -172,19 +153,14 @@ class ScrapingWorker:
         }
 
         for field_name in result:
-
-            selector = selectors.get(
-                field_name
-            )
+            selector = selectors.get(field_name)
 
             if not selector:
                 continue
 
             try:
                 locator = (
-                    page.locator(
-                        selector
-                    ).first
+                    page.locator(selector).first
                 )
 
                 if await locator.count() == 0:
@@ -195,9 +171,7 @@ class ScrapingWorker:
                 value = value.strip()
 
                 result[field_name] = (
-                    value
-                    if value
-                    else None
+                    value if value else None
                 )
 
             except Exception:
@@ -209,29 +183,34 @@ class ScrapingWorker:
         self,
         page: Page,
     ) -> dict:
-
         title = await page.title()
 
-        content = await page.locator(
-            "body"
-        ).inner_text()
+        body = page.locator("body")
+
+        try:
+            content = await body.inner_text()
+        except Exception:
+            content = ""
 
         content = content[:20_000]
 
-        links = await page.locator(
-            "a"
-        ).evaluate_all(
-            """
-            elements => elements
-                .slice(0, 100)
-                .map(a => ({
-                    text: (
-                        a.innerText || ""
-                    ).trim(),
-                    href: a.href || ""
-                }))
-            """
-        )
+        try:
+            links = await page.locator(
+                "a"
+            ).evaluate_all(
+                """
+                elements => elements
+                    .slice(0, 100)
+                    .map(a => ({
+                        text: (
+                            a.innerText || ""
+                        ).trim(),
+                        href: a.href || ""
+                    }))
+                """
+            )
+        except Exception:
+            links = []
 
         return {
             "title": title,
@@ -244,7 +223,6 @@ class ScrapingWorker:
         page: Page,
         selectors: dict | None,
     ) -> dict:
-
         structured = (
             await self._extract_structured_data(
                 page,
@@ -263,16 +241,14 @@ class ScrapingWorker:
             "generic": generic,
         }
 
-    # ---------------------------------------------------------
+    # =========================================================
     # Main worker
-    # ---------------------------------------------------------
+    # =========================================================
 
     async def run(self) -> None:
-
         db = SessionLocal()
 
         try:
-
             job = self._get_job(db)
 
             if job is None:
@@ -285,20 +261,27 @@ class ScrapingWorker:
             targets = self._get_targets(db)
 
             if not targets:
-
                 job.status = "completed"
-
                 job.total_items = 0
                 job.successful_items = 0
                 job.failed_items = 0
-
                 job.completed_at = (
-                    datetime.now(
-                        timezone.utc
-                    )
+                    datetime.now(timezone.utc)
                 )
 
                 db.commit()
+
+                execution_events.emit(
+                    self.job_id,
+                    "job_completed",
+                    "No pending targets found.",
+                    status="completed",
+                    data={
+                        "total_items": 0,
+                        "successful_items": 0,
+                        "failed_items": 0,
+                    },
+                )
 
                 return
 
@@ -309,17 +292,12 @@ class ScrapingWorker:
             job.status = "running"
 
             job.started_at = (
-                datetime.now(
-                    timezone.utc
-                )
+                datetime.now(timezone.utc)
             )
 
             job.error_message = None
 
-            job.total_items = len(
-                targets
-            )
-
+            job.total_items = len(targets)
             job.successful_items = 0
             job.failed_items = 0
 
@@ -331,9 +309,7 @@ class ScrapingWorker:
                 "Scraping job started.",
                 status="running",
                 data={
-                    "target_count": len(
-                        targets
-                    ),
+                    "target_count": len(targets),
                     "max_concurrency": (
                         job.max_concurrency
                     ),
@@ -353,8 +329,7 @@ class ScrapingWorker:
                 "\n"
                 "========================================\n"
                 f"[worker] JOB {job.id} STARTED\n"
-                f"[worker] targets="
-                f"{len(targets)}\n"
+                f"[worker] targets={len(targets)}\n"
                 f"[worker] concurrency="
                 f"{job.max_concurrency}\n"
                 f"[worker] retries="
@@ -365,23 +340,22 @@ class ScrapingWorker:
             )
 
             # -------------------------------------------------
-            # Start ONE shared browser process
+            # Shared browser process
             # -------------------------------------------------
 
             await self.browser_service.start()
 
-            # -------------------------------------------------
-            # Strict concurrency limiter
-            # -------------------------------------------------
+            # Maximum concurrency is deliberately capped.
+            concurrency = max(
+                1,
+                min(
+                    job.max_concurrency,
+                    10,
+                ),
+            )
 
             semaphore = asyncio.Semaphore(
-                max(
-                    1,
-                    min(
-                        job.max_concurrency,
-                        10,
-                    ),
-                )
+                concurrency
             )
 
             results = await asyncio.gather(
@@ -406,36 +380,20 @@ class ScrapingWorker:
             failed = 0
 
             for result in results:
-
                 if (
-                    isinstance(
-                        result,
-                        dict,
-                    )
-                    and result.get(
-                        "success"
-                    )
-                    is True
+                    isinstance(result, dict)
+                    and result.get("success") is True
                 ):
-
                     successful += 1
 
                     db.add(
                         ScrapingRecord(
                             job_id=job.id,
-                            url=result[
-                                "url"
-                            ],
+                            url=result["url"],
                             status="success",
-                            title=result.get(
-                                "title"
-                            ),
-                            content=result.get(
-                                "content"
-                            ),
-                            data=result.get(
-                                "data"
-                            ),
+                            title=result.get("title"),
+                            content=result.get("content"),
+                            data=result.get("data"),
                             attempt=result.get(
                                 "attempt",
                                 1,
@@ -444,19 +402,15 @@ class ScrapingWorker:
                     )
 
                 else:
-
                     failed += 1
 
                     if isinstance(
                         result,
                         dict,
                     ):
-
-                        error_message = (
-                            result.get(
-                                "error",
-                                "Unknown scraping error",
-                            )
+                        error_message = result.get(
+                            "error",
+                            "Unknown scraping error",
                         )
 
                         url = result.get(
@@ -464,32 +418,21 @@ class ScrapingWorker:
                             "",
                         )
 
-                        attempt = (
-                            result.get(
-                                "attempt",
-                                job.max_retries
-                                + 1,
-                            )
+                        attempt = result.get(
+                            "attempt",
+                            job.max_retries + 1,
                         )
 
-                        telemetry = (
-                            result.get(
-                                "telemetry"
-                            )
+                        telemetry = result.get(
+                            "telemetry"
                         )
 
                     else:
-
-                        error_message = str(
-                            result
-                        )
-
+                        error_message = str(result)
                         url = ""
                         attempt = (
-                            job.max_retries
-                            + 1
+                            job.max_retries + 1
                         )
-
                         telemetry = None
 
                     db.add(
@@ -497,9 +440,7 @@ class ScrapingWorker:
                             job_id=job.id,
                             url=url,
                             status="failed",
-                            error_message=(
-                                error_message
-                            ),
+                            error_message=error_message,
                             attempt=attempt,
                             data=(
                                 telemetry
@@ -516,26 +457,18 @@ class ScrapingWorker:
             # Final job state
             # -------------------------------------------------
 
-            job.successful_items = (
-                successful
-            )
-
+            job.successful_items = successful
             job.failed_items = failed
 
             if failed == 0:
-
                 job.status = "completed"
 
-                final_event = (
-                    "job_completed"
-                )
+                final_event = "job_completed"
 
                 message = (
                     "Scraping job completed successfully."
                 )
-
             else:
-
                 job.status = (
                     "completed_with_errors"
                 )
@@ -549,9 +482,7 @@ class ScrapingWorker:
                 )
 
             job.completed_at = (
-                datetime.now(
-                    timezone.utc
-                )
+                datetime.now(timezone.utc)
             )
 
             db.commit()
@@ -562,12 +493,8 @@ class ScrapingWorker:
                 message,
                 status=job.status,
                 data={
-                    "total_items": len(
-                        targets
-                    ),
-                    "successful_items": (
-                        successful
-                    ),
+                    "total_items": len(targets),
+                    "successful_items": successful,
                     "failed_items": failed,
                 },
             )
@@ -576,15 +503,12 @@ class ScrapingWorker:
                 "\n"
                 "========================================\n"
                 f"[worker] JOB {job.id} COMPLETE\n"
-                f"[worker] successful="
-                f"{successful}\n"
-                f"[worker] failed="
-                f"{failed}\n"
+                f"[worker] successful={successful}\n"
+                f"[worker] failed={failed}\n"
                 "========================================\n"
             )
 
         except Exception as exc:
-
             db.rollback()
 
             print(
@@ -595,17 +519,10 @@ class ScrapingWorker:
             job = self._get_job(db)
 
             if job is not None:
-
                 job.status = "failed"
-
-                job.error_message = str(
-                    exc
-                )
-
+                job.error_message = str(exc)
                 job.completed_at = (
-                    datetime.now(
-                        timezone.utc
-                    )
+                    datetime.now(timezone.utc)
                 )
 
                 db.commit()
@@ -621,14 +538,12 @@ class ScrapingWorker:
             )
 
         finally:
-
             await self.browser_service.stop()
-
             db.close()
 
-    # ---------------------------------------------------------
+    # =========================================================
     # Target processing
-    # ---------------------------------------------------------
+    # =========================================================
 
     async def _process_target(
         self,
@@ -640,11 +555,9 @@ class ScrapingWorker:
     ) -> dict:
 
         async with semaphore:
-
             db = SessionLocal()
 
             try:
-
                 target = (
                     db.query(
                         ScrapingTarget
@@ -657,7 +570,6 @@ class ScrapingWorker:
                 )
 
                 if target is not None:
-
                     target.status = "running"
 
                     target.started_at = (
@@ -669,18 +581,17 @@ class ScrapingWorker:
                     db.commit()
 
             finally:
-
                 db.close()
 
             last_telemetry = None
 
+            # max_retries means additional retries.
+            # Therefore attempts are 1..max_retries+1.
             for attempt in range(
                 1,
                 max_retries + 2,
             ):
-
                 context = None
-
                 status_code = None
 
                 proxy_config = (
@@ -696,11 +607,9 @@ class ScrapingWorker:
                     )
                 )
 
-                telemetry = (
-                    ExecutionTelemetry(
-                        target_id=target_id,
-                        url=target_url,
-                    )
+                telemetry = ExecutionTelemetry(
+                    target_id=target_id,
+                    url=target_url,
                 )
 
                 telemetry.mark_started(
@@ -724,6 +633,9 @@ class ScrapingWorker:
                 db = SessionLocal()
 
                 try:
+                    # -----------------------------------------
+                    # Update target attempt
+                    # -----------------------------------------
 
                     target = (
                         db.query(
@@ -737,13 +649,11 @@ class ScrapingWorker:
                     )
 
                     if target is not None:
-
                         target.attempt = attempt
-
                         db.commit()
 
                     # -----------------------------------------
-                    # New isolated browser context
+                    # Create isolated browser context
                     # -----------------------------------------
 
                     context = (
@@ -751,6 +661,15 @@ class ScrapingWorker:
                         .create_context(
                             proxy_config=proxy_config
                         )
+                    )
+
+                    # IMPORTANT:
+                    # BrowserService owns the real session ID.
+                    # Use that same ID in telemetry/events.
+                    telemetry.session_id = getattr(
+                        context,
+                        "careerpilot_session_id",
+                        telemetry.session_id,
                     )
 
                     page = (
@@ -787,9 +706,7 @@ class ScrapingWorker:
 
                     response = await page.goto(
                         target_url,
-                        wait_until=(
-                            "domcontentloaded"
-                        ),
+                        wait_until="domcontentloaded",
                         timeout=30_000,
                     )
 
@@ -816,14 +733,11 @@ class ScrapingWorker:
                     # Give dynamic pages a short
                     # opportunity to finish loading.
                     try:
-
                         await page.wait_for_load_state(
                             "networkidle",
                             timeout=5_000,
                         )
-
                     except Exception:
-
                         pass
 
                     # -----------------------------------------
@@ -838,7 +752,6 @@ class ScrapingWorker:
                     )
 
                     if protection.detected:
-
                         failure_type = (
                             protection.failure_type
                             or "protection_challenge"
@@ -856,12 +769,8 @@ class ScrapingWorker:
 
                         telemetry.mark_failed(
                             error=error_message,
-                            failure_type=(
-                                failure_type
-                            ),
-                            http_status=(
-                                status_code
-                            ),
+                            failure_type=failure_type,
+                            http_status=status_code,
                         )
 
                         last_telemetry = (
@@ -869,19 +778,18 @@ class ScrapingWorker:
                         )
 
                         retry = should_retry(
-                            failure_type=(
-                                failure_type
-                            ),
+                            failure_type=failure_type,
                             attempt=attempt,
-                            max_retries=(
-                                max_retries
-                            ),
+                            max_retries=max_retries,
                         )
 
                         execution_events.emit(
                             self.job_id,
                             "protection_detected",
-                            "Access protection detected; no bypass attempted.",
+                            (
+                                "Access protection detected; "
+                                "no bypass attempted."
+                            ),
                             target_id=target_id,
                             session_id=(
                                 telemetry.session_id
@@ -889,9 +797,7 @@ class ScrapingWorker:
                             status="failed",
                             attempt=attempt,
                             proxy=proxy_label,
-                            http_status=(
-                                status_code
-                            ),
+                            http_status=status_code,
                             duration_ms=(
                                 telemetry.duration_ms
                             ),
@@ -905,22 +811,22 @@ class ScrapingWorker:
                         )
 
                         if retry:
-
                             delay = (
                                 retry_delay_seconds(
                                     failure_type=(
                                         failure_type
                                     ),
-                                    attempt=(
-                                        attempt
-                                    ),
+                                    attempt=attempt,
                                 )
                             )
 
                             execution_events.emit(
                                 self.job_id,
                                 "target_retry_scheduled",
-                                "Retry scheduled after protection response.",
+                                (
+                                    "Retry scheduled after "
+                                    "protection response."
+                                ),
                                 target_id=target_id,
                                 session_id=(
                                     telemetry.session_id
@@ -928,9 +834,7 @@ class ScrapingWorker:
                                 status="retrying",
                                 attempt=attempt,
                                 proxy=proxy_label,
-                                http_status=(
-                                    status_code
-                                ),
+                                http_status=status_code,
                                 data={
                                     "failure_type": (
                                         failure_type
@@ -941,9 +845,7 @@ class ScrapingWorker:
                                 },
                             )
 
-                            await asyncio.sleep(
-                                delay
-                            )
+                            await asyncio.sleep(delay)
 
                             continue
 
@@ -959,7 +861,6 @@ class ScrapingWorker:
                         )
 
                         if target is not None:
-
                             target.status = "failed"
 
                             target.error_message = (
@@ -987,7 +888,7 @@ class ScrapingWorker:
                         }
 
                     # -----------------------------------------
-                    # Structured extraction
+                    # Extraction
                     # -----------------------------------------
 
                     extracted = (
@@ -997,31 +898,27 @@ class ScrapingWorker:
                         )
                     )
 
-                    structured = (
-                        extracted[
-                            "structured"
-                        ]
-                    )
+                    structured = extracted[
+                        "structured"
+                    ]
 
-                    generic = (
-                        extracted[
-                            "generic"
-                        ]
-                    )
+                    generic = extracted[
+                        "generic"
+                    ]
 
                     title = (
-                        structured.get(
-                            "title"
-                        )
-                        or generic.get(
-                            "title"
-                        )
+                        structured.get("title")
+                        or generic.get("title")
                     )
 
                     content = generic.get(
                         "content",
                         "",
                     )
+
+                    # -----------------------------------------
+                    # Successful telemetry
+                    # -----------------------------------------
 
                     telemetry.mark_success(
                         http_status=status_code
@@ -1032,35 +929,23 @@ class ScrapingWorker:
                     )
 
                     data = {
-                        "item_id": (
-                            structured.get(
-                                "item_id"
-                            )
+                        "item_id": structured.get(
+                            "item_id"
                         ),
-                        "title": (
-                            structured.get(
-                                "title"
-                            )
+                        "title": structured.get(
+                            "title"
                         ),
-                        "description": (
-                            structured.get(
-                                "description"
-                            )
+                        "description": structured.get(
+                            "description"
                         ),
-                        "price": (
-                            structured.get(
-                                "price"
-                            )
+                        "price": structured.get(
+                            "price"
                         ),
-                        "category": (
-                            structured.get(
-                                "category"
-                            )
+                        "category": structured.get(
+                            "category"
                         ),
                         "url": page.url,
-                        "http_status": (
-                            status_code
-                        ),
+                        "http_status": status_code,
                         "content_length": len(
                             content
                         ),
@@ -1082,12 +967,24 @@ class ScrapingWorker:
                         ),
                     }
 
+                    # -----------------------------------------
+                    # Update target success
+                    # -----------------------------------------
+
+                    target = (
+                        db.query(
+                            ScrapingTarget
+                        )
+                        .filter(
+                            ScrapingTarget.id
+                            == target_id
+                        )
+                        .first()
+                    )
+
                     if target is not None:
-
                         target.status = "success"
-
                         target.error_message = None
-
                         target.completed_at = (
                             datetime.now(
                                 timezone.utc
@@ -1099,7 +996,10 @@ class ScrapingWorker:
                     execution_events.emit(
                         self.job_id,
                         "target_completed",
-                        "Target scraped and structured successfully.",
+                        (
+                            "Target scraped and "
+                            "structured successfully."
+                        ),
                         target_id=target_id,
                         session_id=(
                             telemetry.session_id
@@ -1112,30 +1012,20 @@ class ScrapingWorker:
                             telemetry.duration_ms
                         ),
                         data={
-                            "item_id": (
-                                structured.get(
-                                    "item_id"
-                                )
+                            "item_id": structured.get(
+                                "item_id"
                             ),
-                            "title": (
-                                structured.get(
-                                    "title"
-                                )
+                            "title": structured.get(
+                                "title"
                             ),
-                            "description": (
-                                structured.get(
-                                    "description"
-                                )
+                            "description": structured.get(
+                                "description"
                             ),
-                            "price": (
-                                structured.get(
-                                    "price"
-                                )
+                            "price": structured.get(
+                                "price"
                             ),
-                            "category": (
-                                structured.get(
-                                    "category"
-                                )
+                            "category": structured.get(
+                                "category"
                             ),
                         },
                     )
@@ -1159,19 +1049,14 @@ class ScrapingWorker:
                         "content": content,
                         "data": data,
                         "attempt": attempt,
-                        "telemetry": (
-                            telemetry_data
-                        ),
+                        "telemetry": telemetry_data,
                     }
 
                 except Exception as exc:
-
                     db.rollback()
 
                     failure_type, error_message = (
-                        classify_exception(
-                            exc
-                        )
+                        classify_exception(exc)
                     )
 
                     telemetry.mark_failed(
@@ -1223,7 +1108,6 @@ class ScrapingWorker:
                     )
 
                     if not retry:
-
                         target = (
                             db.query(
                                 ScrapingTarget
@@ -1236,7 +1120,6 @@ class ScrapingWorker:
                         )
 
                         if target is not None:
-
                             target.status = "failed"
 
                             target.error_message = (
@@ -1271,9 +1154,7 @@ class ScrapingWorker:
                                 "failure_type": (
                                     failure_type
                                 ),
-                                "error": (
-                                    error_message
-                                ),
+                                "error": error_message,
                             },
                         )
 
@@ -1288,13 +1169,9 @@ class ScrapingWorker:
                             ),
                         }
 
-                    delay = (
-                        retry_delay_seconds(
-                            failure_type=(
-                                failure_type
-                            ),
-                            attempt=attempt,
-                        )
+                    delay = retry_delay_seconds(
+                        failure_type=failure_type,
+                        attempt=attempt,
                     )
 
                     execution_events.emit(
@@ -1319,14 +1196,10 @@ class ScrapingWorker:
                         },
                     )
 
-                    await asyncio.sleep(
-                        delay
-                    )
+                    await asyncio.sleep(delay)
 
                 finally:
-
                     if context is not None:
-
                         try:
                             await (
                                 self.browser_service
@@ -1334,9 +1207,7 @@ class ScrapingWorker:
                                     context
                                 )
                             )
-
                         except Exception as close_error:
-
                             print(
                                 "[worker] Context "
                                 "cleanup error: "
@@ -1352,19 +1223,13 @@ class ScrapingWorker:
                 "error": (
                     "Worker exited without result."
                 ),
-                "attempt": (
-                    max_retries + 1
-                ),
-                "telemetry": (
-                    last_telemetry
-                ),
+                "attempt": max_retries + 1,
+                "telemetry": last_telemetry,
             }
 
 
 async def run_scraping_job(
     job_id: int,
 ) -> None:
-
     worker = ScrapingWorker(job_id)
-
     await worker.run()

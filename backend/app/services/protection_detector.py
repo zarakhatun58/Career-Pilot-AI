@@ -58,13 +58,14 @@ class ProtectionDetector:
         http_status: int | None = None,
     ) -> ProtectionResult:
 
-        # HTTP-level protection.
+        # ---------------------------------------------
+        # HTTP-level protection
+        # ---------------------------------------------
+
         if http_status in cls.HTTP_PROTECTION_CODES:
-            failure_type = (
-                cls.HTTP_PROTECTION_CODES[
-                    http_status
-                ]
-            )
+            failure_type = cls.HTTP_PROTECTION_CODES[
+                http_status
+            ]
 
             return ProtectionResult(
                 detected=True,
@@ -76,7 +77,10 @@ class ProtectionDetector:
                 http_status=http_status,
             )
 
-        # Page title detection.
+        # ---------------------------------------------
+        # Page title detection
+        # ---------------------------------------------
+
         try:
             title = (
                 await page.title()
@@ -100,7 +104,10 @@ class ProtectionDetector:
                         http_status=http_status,
                     )
 
-        # Body detection.
+        # ---------------------------------------------
+        # Body detection
+        # ---------------------------------------------
+
         try:
             body = await page.locator(
                 "body"
@@ -150,24 +157,19 @@ def classify_exception(
         "http_403:" in lowered
         or "http 403" in lowered
     ):
-        return (
-            "http_403",
-            message,
-        )
+        return "http_403", message
 
     if (
         "http_429:" in lowered
         or "http 429" in lowered
     ):
-        return (
-            "http_429",
-            message,
-        )
+        return "http_429", message
 
     if (
         "protection_challenge:" in lowered
         or "challenge" in lowered
         or "captcha" in lowered
+        or "cloudflare" in lowered
     ):
         return (
             "protection_challenge",
@@ -178,55 +180,30 @@ def classify_exception(
         "timeout" in lowered
         or "timed out" in lowered
     ):
-        return (
-            "timeout",
-            message,
-        )
+        return "timeout", message
+
+    if "err_connection_refused" in lowered:
+        return "connection_error", message
 
     if (
-        "err_connection_refused"
-        in lowered
+        "err_connection_reset" in lowered
+        or "connection reset" in lowered
     ):
-        return (
-            "connection_error",
-            message,
-        )
+        return "connection_error", message
 
     if (
-        "err_connection_reset"
-        in lowered
-        or "connection reset"
-        in lowered
+        "err_name_not_resolved" in lowered
+        or "name_not_resolved" in lowered
     ):
-        return (
-            "connection_error",
-            message,
-        )
-
-    if (
-        "err_name_not_resolved"
-        in lowered
-        or "name_not_resolved"
-        in lowered
-    ):
-        return (
-            "dns_error",
-            message,
-        )
+        return "dns_error", message
 
     if (
         "net::err_" in lowered
         or "navigation" in lowered
     ):
-        return (
-            "navigation_error",
-            message,
-        )
+        return "navigation_error", message
 
-    return (
-        "unknown",
-        message,
-    )
+    return "unknown", message
 
 
 def should_retry(
@@ -237,8 +214,11 @@ def should_retry(
     """
     Decide whether another attempt should be made.
 
-    Protection responses are retried only according to the
-    configured retry count. No bypass or evasion is attempted.
+    Protection challenges are terminal for the current target.
+    They are detected and reported rather than repeatedly retried.
+
+    Rate limits and transient network failures may be retried
+    using bounded backoff.
     """
 
     if attempt > max_retries:
@@ -265,7 +245,6 @@ def retry_delay_seconds(
     """
 
     if failure_type == "http_429":
-        # Rate-limit responses get a longer delay.
         return min(
             5 * (2 ** (attempt - 1)),
             30,
@@ -280,13 +259,6 @@ def retry_delay_seconds(
         return min(
             2 ** (attempt - 1),
             8,
-        )
-
-    if failure_type == "protection_challenge":
-        # Detection only. We don't attempt to bypass it.
-        return min(
-            5 * (2 ** (attempt - 1)),
-            30,
         )
 
     return min(

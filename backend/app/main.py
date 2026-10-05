@@ -33,11 +33,12 @@ app.add_middleware(
 )
 
 
-app.include_router(health_router)
-app.include_router(auth_router)
-app.include_router(resumes_router)
-app.include_router(ats_router)
-app.include_router(scraping_router)
+# API routes
+app.include_router(health_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
+app.include_router(resumes_router, prefix="/api")
+app.include_router(ats_router, prefix="/api")
+app.include_router(scraping_router, prefix="/api")
 
 
 @app.get("/")

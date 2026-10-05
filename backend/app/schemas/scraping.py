@@ -1,3 +1,4 @@
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -18,8 +19,20 @@ class ScrapingSelectorConfig(BaseModel):
     item_id: str | None = None
 
 
+class ScrapingTargetCreate(BaseModel):
+    """
+    Individual scraping target.
+
+    Each target contains the URL to scrape and an optional
+    external identifier supplied by the client/frontend.
+    """
+
+    url: HttpUrl
+    external_id: str | None = None
+
+
 class ScrapingJobCreate(BaseModel):
-    targets: list[HttpUrl] = Field(
+    targets: list[ScrapingTargetCreate] = Field(
         min_length=1,
         max_length=100,
     )
@@ -92,3 +105,4 @@ class ScrapingRecordResponse(BaseModel):
 
     attempt: int
     created_at: datetime
+

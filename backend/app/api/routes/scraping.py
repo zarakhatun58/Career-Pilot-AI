@@ -28,7 +28,7 @@ from app.workers.scraping_worker import run_scraping_job
 
 
 router = APIRouter(
-    prefix="/api/scraping",
+    prefix="/scraping",
     tags=["Web Scraping"],
 )
 

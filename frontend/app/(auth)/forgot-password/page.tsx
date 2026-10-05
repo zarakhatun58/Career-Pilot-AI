@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,11 +24,19 @@ export default function ForgotPasswordPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    if (isSupabaseConfigured) {
-      await supabase.auth.resetPasswordForEmail(email);
+    try {
+      await apiFetch('/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      });
+      setSent(true);
+    } catch {
+      // Keep the same privacy-preserving UI even when the optional
+      // password-reset email service is not configured.
+      setSent(true);
+    } finally {
+      setLoading(false);
     }
-    setSent(true);
-    setLoading(false);
   };
 
   return (

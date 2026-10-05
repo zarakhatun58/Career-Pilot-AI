@@ -1,3 +1,4 @@
+
 from sqlalchemy.orm import Session
 
 from app.models.scraping import ScrapingJob
@@ -10,9 +11,18 @@ def create_scraping_job(
     db: Session,
     payload: ScrapingJobCreate,
 ) -> ScrapingJob:
+    """
+    Create a scraping job and its individual targets.
+
+    Each target is represented by ScrapingTargetCreate and contains:
+    - url
+    - optional external_id
+
+    The database stores the actual URL in ScrapingTarget.url.
+    """
 
     targets = [
-        str(target)
+        str(target.url)
         for target in payload.targets
     ]
 
@@ -37,16 +47,15 @@ def create_scraping_job(
     db.add(job)
     db.flush()
 
-    for target_url in targets:
-        target = ScrapingTarget(
+    for target in payload.targets:
+        scraping_target = ScrapingTarget(
             job_id=job.id,
-            url=target_url,
+            url=str(target.url),
             status="pending",
             attempt=0,
         )
 
-        db.add(target)
-
+        db.add(scraping_target)
     db.commit()
     db.refresh(job)
 
@@ -108,3 +117,4 @@ def get_scraping_targets(
         )
         .all()
     )
+
