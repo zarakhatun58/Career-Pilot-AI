@@ -1,4 +1,5 @@
 import asyncio
+import platform
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,8 +12,9 @@ from app.api.routes.scraping import router as scraping_router
 from app.core.config import settings
 
 
-# Playwright on Windows requires a subprocess-capable asyncio event loop.
-if hasattr(asyncio, "WindowsProactorEventLoopPolicy"):
+# Playwright on Windows benefits from the Proactor event loop.
+# Render/Linux uses the default asyncio event loop.
+if platform.system() == "Windows":
     asyncio.set_event_loop_policy(
         asyncio.WindowsProactorEventLoopPolicy()
     )
@@ -24,6 +26,8 @@ app = FastAPI(
 )
 
 
+# CORS
+# FRONTEND_URL is configured through the environment.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_url],
@@ -46,4 +50,5 @@ def root():
     return {
         "message": "Welcome to CareerPilot AI API",
         "version": settings.app_version,
+        "environment": settings.environment,
     }

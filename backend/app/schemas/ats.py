@@ -1,12 +1,15 @@
-from datetime import datetime
 from uuid import UUID
-
+from datetime import datetime
 from pydantic import BaseModel, Field
+
 
 
 class ATSCheckRequest(BaseModel):
     resume_id: UUID
-    job_description: str = Field(min_length=20)
+    job_description: str = Field(
+        min_length=50,
+        max_length=50_000,
+    )
 
 
 class ATSReportResponse(BaseModel):

@@ -162,3 +162,18 @@ run_server.local.py
 # in source control:
 
 # .env.example
+
+# =========================================================
+# CareerPilot local runtime storage
+# =========================================================
+
+
+storage/
+
+# =========================================================
+# Temporary database verification scripts
+# =========================================================
+
+create_careerpilot_schema.py
+verify_careerpilot_schema.py
+verify_careerpilot_tables.py

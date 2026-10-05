@@ -4,11 +4,12 @@ from uuid import UUID, uuid4
 from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.session import Base
+from app.db.session import Base, DATABASE_SCHEMA
 
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = {"schema": DATABASE_SCHEMA}
 
     id: Mapped[UUID] = mapped_column(
         primary_key=True,

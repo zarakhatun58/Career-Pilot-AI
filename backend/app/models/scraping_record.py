@@ -3,11 +3,12 @@ from datetime import datetime, timezone
 from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.session import Base
+from app.db.session import Base, DATABASE_SCHEMA
 
 
 class ScrapingRecord(Base):
     __tablename__ = "scraping_records"
+    __table_args__ = {"schema": DATABASE_SCHEMA}
 
     id: Mapped[int] = mapped_column(
         Integer,
@@ -16,7 +17,10 @@ class ScrapingRecord(Base):
     )
 
     job_id: Mapped[int] = mapped_column(
-        ForeignKey("scraping_jobs.id", ondelete="CASCADE"),
+        ForeignKey(
+            f"{DATABASE_SCHEMA}.scraping_jobs.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )

@@ -3,11 +3,12 @@ from datetime import datetime, timezone
 from sqlalchemy import DateTime, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.session import Base
+from app.db.session import Base, DATABASE_SCHEMA
 
 
 class ScrapingJob(Base):
     __tablename__ = "scraping_jobs"
+    __table_args__ = {"schema": DATABASE_SCHEMA}
 
     id: Mapped[int] = mapped_column(
         Integer,
@@ -61,7 +62,6 @@ class ScrapingJob(Base):
         nullable=True,
     )
 
-    # Structured extraction selectors.
     selectors: Mapped[dict | None] = mapped_column(
         JSON,
         nullable=True,

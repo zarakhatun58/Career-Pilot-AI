@@ -4,11 +4,12 @@ from uuid import UUID, uuid4
 from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.session import Base
+from app.db.session import Base, DATABASE_SCHEMA
 
 
 class Resume(Base):
     __tablename__ = "resumes"
+    __table_args__ = {"schema": DATABASE_SCHEMA}
 
     id: Mapped[UUID] = mapped_column(
         primary_key=True,
@@ -16,7 +17,7 @@ class Resume(Base):
     )
 
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey(f"{DATABASE_SCHEMA}.users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
