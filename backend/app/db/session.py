@@ -11,8 +11,18 @@ class Base(DeclarativeBase):
     pass
 
 
+database_url = settings.database_url
+
+# Explicitly use psycopg 3.
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace(
+        "postgresql://",
+        "postgresql+psycopg://",
+        1,
+    )
+
 engine = create_engine(
-    settings.database_url,
+    database_url,
 )
 
 
